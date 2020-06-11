@@ -80,7 +80,7 @@ function addRoutes(app, peliasConfig) {
   // execute placeholder if libpostal only parsed as admin-only and needs to
   //  be geodisambiguated
   const placeholderGeodisambiguationShouldExecute = all(
-    not(hasResponseDataOrRequestErrors),
+    not(predicates.hasRequestErrors),
     isPlaceholderServiceEnabled,
     // check request.clean for several conditions first
     not(
@@ -106,7 +106,7 @@ function addRoutes(app, peliasConfig) {
   // execute placeholder if libpostal identified address parts but ids need to
   //  be looked up for admin parts
   const placeholderIdsLookupShouldExecute = all(
-    not(hasResponseDataOrRequestErrors),
+    not(predicates.hasRequestErrors),
     isPlaceholderServiceEnabled,
     predicates.isRequestLayersAnyAddressRelated,
     // check clean.parsed_text for several conditions that must all be true
@@ -147,13 +147,25 @@ function addRoutes(app, peliasConfig) {
   );
 
   // defer to pelias parser for analysis IF there's no response AND placeholder should not have executed
-  const shouldDeferToPeliasParser = all(
-    not(predicates.hasRequestErrors),
-    any(
-      predicates.hasAdminOnlyResults,
-      predicates.isAdminOnlyAnalysis
-    )
-  );
+  const shouldDeferToPeliasParser = function(req, res) {
+    if (not(predicates.hasResponseData)(req, res)) {
+      return true;
+    }
+    const ph = placeholderShouldHaveExecuted(req,res);
+
+    const admin = all(
+      not(predicates.isRequestSourcesOnlyWhosOnFirst),
+      any(
+        all(
+          predicates.hasAdminOnlyResults,
+          not(predicates.isAdminOnlyAnalysis)
+        ),
+        not(predicates.hasResponseData)
+      )
+    )(req, res);
+
+    return ph && admin;
+  };
 
   // call search_pelias_parser query if pelias_parser was the parser
   const searchPeliasParserShouldExecute = all(
